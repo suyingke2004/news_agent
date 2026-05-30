@@ -1,0 +1,1602 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>事实核查</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --bg-0: #050816;
+            --bg-1: #0b1120;
+            --panel: rgba(9, 16, 33, 0.72);
+            --panel-strong: rgba(12, 20, 39, 0.9);
+            --card: rgba(255, 255, 255, 0.06);
+            --card-border: rgba(255, 255, 255, 0.12);
+            --text-0: #f8fafc;
+            --text-1: #cbd5e1;
+            --text-2: #94a3b8;
+            --line: rgba(148, 163, 184, 0.18);
+            --accent: #7dd3fc;
+            --accent-2: #a78bfa;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --neutral: #94a3b8;
+            --shadow: 0 20px 60px rgba(0, 0, 0, 0.32);
+            --radius-lg: 24px;
+            --radius-md: 18px;
+            --radius-sm: 12px;
+            --space-1: 0.25rem;
+            --space-2: 0.5rem;
+            --space-3: 0.75rem;
+            --space-4: 1rem;
+            --space-5: 1.25rem;
+            --space-6: 1.5rem;
+            --space-8: 2rem;
+            --space-10: 2.5rem;
+        }
+
+        * { box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            margin: 0;
+            color: var(--text-0);
+            background:
+                radial-gradient(circle at top left, rgba(125, 211, 252, 0.14), transparent 30%),
+                radial-gradient(circle at 80% 10%, rgba(167, 139, 250, 0.14), transparent 28%),
+                linear-gradient(180deg, var(--bg-0), var(--bg-1));
+            min-height: 100vh;
+            overflow-x: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 48px 48px;
+            mask-image: radial-gradient(circle at center, black 35%, transparent 85%);
+            opacity: 0.55;
+            z-index: -2;
+        }
+
+        .stars-container, .cursor-particles { z-index: -1; }
+
+        .verify-shell {
+            width: min(1480px, calc(100vw - 24px));
+            margin: 0 auto;
+            padding: var(--space-4);
+        }
+
+        .verify-surface {
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(180deg, rgba(8, 15, 31, 0.84), rgba(4, 9, 19, 0.92));
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: var(--shadow);
+            border-radius: 30px;
+            backdrop-filter: blur(20px);
+        }
+
+        .verify-surface::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(circle at 12% 0%, rgba(125, 211, 252, 0.12), transparent 24%),
+                radial-gradient(circle at 88% 12%, rgba(245, 158, 11, 0.12), transparent 22%),
+                radial-gradient(circle at 50% 100%, rgba(34, 197, 94, 0.08), transparent 28%);
+            pointer-events: none;
+        }
+
+        .verify-header {
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: var(--space-6);
+            padding: var(--space-6) var(--space-6) var(--space-4);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .brand h1 {
+            margin: 0;
+            font-size: clamp(2rem, 3vw, 3.25rem);
+            letter-spacing: -0.04em;
+            color: var(--text-0);
+        }
+
+        .brand p {
+            margin: var(--space-2) 0 0;
+            color: var(--text-1);
+            max-width: 56ch;
+        }
+
+        .lang-toggle-btn,
+        .primary-btn {
+            border: 0;
+            cursor: pointer;
+            transition: transform 180ms ease, opacity 180ms ease, box-shadow 180ms ease, background 180ms ease;
+        }
+
+        .lang-toggle-btn:hover,
+        .primary-btn:hover { transform: translateY(-1px); }
+
+        .lang-toggle-btn {
+            padding: 0.8rem 1rem;
+            border-radius: 999px;
+            color: var(--text-0);
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+            backdrop-filter: blur(12px);
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 280px minmax(0, 1fr) 320px;
+            gap: 0;
+        }
+
+        .sidebar,
+        .model-sidebar,
+        .main-panel {
+            position: relative;
+            min-height: 72vh;
+        }
+
+        .sidebar,
+        .model-sidebar {
+            padding: var(--space-5);
+            background: rgba(4, 10, 22, 0.42);
+        }
+
+        .sidebar {
+            border-right: 1px solid var(--line);
+        }
+
+        .model-sidebar {
+            border-left: 1px solid var(--line);
+        }
+
+        .section-title {
+            margin: 0 0 var(--space-4);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+            color: var(--text-2);
+        }
+
+        .sidebar-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: grid;
+            gap: var(--space-3);
+        }
+
+        .history-item {
+            display: grid;
+            gap: var(--space-2);
+            padding: var(--space-4);
+            border-radius: var(--radius-md);
+            text-decoration: none;
+            color: var(--text-0);
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+        }
+
+        .history-item:hover {
+            transform: translateY(-1px);
+            background: rgba(255,255,255,0.07);
+            border-color: rgba(125, 211, 252, 0.28);
+        }
+
+        .history-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: var(--space-2);
+        }
+
+        .history-title {
+            margin: 0;
+            font-size: 0.95rem;
+            line-height: 1.45;
+            color: var(--text-0);
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+
+        .history-meta {
+            color: var(--text-2);
+            font-size: 0.82rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-1);
+            padding: 0.35rem 0.65rem;
+            border-radius: 999px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            white-space: nowrap;
+            border: 1px solid transparent;
+        }
+
+        .badge.true { background: rgba(34,197,94,0.14); color: #86efac; border-color: rgba(34,197,94,0.35); }
+        .badge.false { background: rgba(239,68,68,0.14); color: #fca5a5; border-color: rgba(239,68,68,0.35); }
+        .badge.mixed { background: rgba(245,158,11,0.16); color: #fcd34d; border-color: rgba(245,158,11,0.35); }
+        .badge.unverified { background: rgba(148,163,184,0.14); color: #cbd5e1; border-color: rgba(148,163,184,0.3); }
+        .badge.supporting { background: rgba(34,197,94,0.12); color: #86efac; border-color: rgba(34,197,94,0.28); }
+        .badge.refuting { background: rgba(239,68,68,0.12); color: #fca5a5; border-color: rgba(239,68,68,0.28); }
+        .badge.neutral { background: rgba(148,163,184,0.12); color: #cbd5e1; border-color: rgba(148,163,184,0.25); }
+        .badge.provider { background: rgba(125,211,252,0.12); color: #bae6fd; border-color: rgba(125,211,252,0.25); }
+
+        .main-panel {
+            padding: var(--space-5);
+            background: rgba(3, 7, 18, 0.25);
+        }
+
+        .hero-grid {
+            display: grid;
+            gap: var(--space-4);
+            grid-template-columns: 1.3fr 0.7fr;
+            align-items: start;
+            margin-bottom: var(--space-5);
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-lg);
+            box-shadow: 0 12px 34px rgba(0,0,0,0.2);
+            backdrop-filter: blur(18px);
+        }
+
+        .input-panel { padding: var(--space-5); }
+
+        .input-form {
+            display: grid;
+            gap: var(--space-4);
+        }
+
+        .input-label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-2);
+            margin-bottom: var(--space-2);
+            color: var(--text-1);
+            font-size: 0.92rem;
+        }
+
+        .input-controls {
+            display: grid;
+            gap: var(--space-3);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        textarea,
+        select,
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            border-radius: var(--radius-sm);
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.05);
+            color: var(--text-0);
+            padding: 0.95rem 1rem;
+            outline: none;
+            transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+        }
+
+        textarea::placeholder, input::placeholder { color: var(--text-2); }
+
+        textarea:focus,
+        select:focus,
+        input:focus {
+            border-color: rgba(125,211,252,0.55);
+            box-shadow: 0 0 0 4px rgba(125,211,252,0.12);
+            background: rgba(255,255,255,0.08);
+        }
+
+        textarea {
+            min-height: 180px;
+            resize: vertical;
+            line-height: 1.6;
+        }
+
+        .language-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: 0.45rem;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .language-toggle span {
+            padding: 0.45rem 0.85rem;
+            border-radius: 999px;
+            color: var(--text-2);
+            font-size: 0.85rem;
+        }
+
+        .language-toggle span.active {
+            color: var(--bg-0);
+            background: linear-gradient(135deg, var(--accent), #f8fafc);
+            font-weight: 700;
+        }
+
+        .submit-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: var(--space-3);
+            justify-content: space-between;
+        }
+
+        .primary-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-2);
+            padding: 0.95rem 1.4rem;
+            border-radius: 999px;
+            background: linear-gradient(135deg, var(--accent), #e0f2fe 55%, #ffffff);
+            color: #07111f;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            box-shadow: 0 16px 36px rgba(125, 211, 252, 0.22);
+        }
+
+        .primary-btn[disabled] {
+            opacity: 0.65;
+            cursor: progress;
+            transform: none;
+        }
+
+        .hint {
+            color: var(--text-2);
+            font-size: 0.9rem;
+        }
+
+        .progress-panel {
+            padding: var(--space-5);
+            margin-bottom: var(--space-5);
+        }
+
+        .progress-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: var(--space-3);
+            margin-bottom: var(--space-4);
+        }
+
+        .progress-title {
+            margin: 0;
+            font-size: 1.05rem;
+            color: var(--text-0);
+        }
+
+        .stage-status {
+            color: var(--text-2);
+            font-size: 0.92rem;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 12px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.08);
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--accent), var(--accent-2), #f8fafc);
+            box-shadow: 0 0 28px rgba(125,211,252,0.45);
+            transition: width 320ms ease;
+        }
+
+        .stage-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: var(--space-2);
+            margin-top: var(--space-4);
+        }
+
+        .stage-pill {
+            padding: 0.7rem 0.5rem;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.08);
+            color: var(--text-2);
+            background: rgba(255,255,255,0.04);
+            text-align: center;
+            font-size: 0.75rem;
+            line-height: 1.35;
+            min-height: 3.2rem;
+            display: grid;
+            place-items: center;
+            transition: background 220ms ease, border-color 220ms ease, color 220ms ease, transform 220ms ease;
+        }
+
+        .stage-pill.completed {
+            color: #ecfeff;
+            border-color: rgba(34,197,94,0.35);
+            background: rgba(34,197,94,0.14);
+        }
+
+        .stage-pill.active {
+            color: #eff6ff;
+            border-color: rgba(125,211,252,0.5);
+            background: rgba(125,211,252,0.16);
+            transform: translateY(-1px);
+        }
+
+        .stream-log {
+            margin-top: var(--space-4);
+            display: grid;
+            gap: var(--space-2);
+            max-height: 140px;
+            overflow: auto;
+            padding-right: var(--space-2);
+        }
+
+        .stream-event {
+            padding: 0.8rem 1rem;
+            border-radius: var(--radius-sm);
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: var(--text-1);
+            font-size: 0.9rem;
+        }
+
+        .results-panel {
+            display: none;
+            padding: var(--space-5);
+            margin-bottom: var(--space-5);
+        }
+
+        .results-panel.visible { display: block; }
+
+        .results-top {
+            display: grid;
+            grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.7fr);
+            gap: var(--space-4);
+            align-items: stretch;
+            margin-bottom: var(--space-4);
+        }
+
+        .verdict-card,
+        .confidence-card {
+            padding: var(--space-5);
+            border-radius: var(--radius-lg);
+            background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .verdict-card h2,
+        .confidence-card h3,
+        .section-card h3 {
+            margin: 0 0 var(--space-3);
+            font-size: 1rem;
+            letter-spacing: 0.02em;
+        }
+
+        .verdict-badge-large {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            margin-bottom: var(--space-3);
+            padding: 0.8rem 1rem;
+            border-radius: 999px;
+            font-size: clamp(1rem, 1.6vw, 1.35rem);
+            font-weight: 900;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .verdict-badge-large.true { background: rgba(34,197,94,0.18); color: #bbf7d0; border: 1px solid rgba(34,197,94,0.38); }
+        .verdict-badge-large.false { background: rgba(239,68,68,0.18); color: #fecaca; border: 1px solid rgba(239,68,68,0.38); }
+        .verdict-badge-large.mixed { background: rgba(245,158,11,0.18); color: #fde68a; border: 1px solid rgba(245,158,11,0.38); }
+        .verdict-badge-large.unverified { background: rgba(148,163,184,0.18); color: #e2e8f0; border: 1px solid rgba(148,163,184,0.38); }
+
+        .overall-summary {
+            color: var(--text-1);
+            line-height: 1.7;
+            margin: 0;
+        }
+
+        .confidence-wrap {
+            display: grid;
+            grid-template-columns: 120px 1fr;
+            gap: var(--space-4);
+            align-items: center;
+        }
+
+        .circular-meter {
+            width: 120px;
+            aspect-ratio: 1;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            background: conic-gradient(var(--accent) 0deg, rgba(255,255,255,0.08) 0deg);
+            position: relative;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+        }
+
+        .circular-meter::after {
+            content: '';
+            position: absolute;
+            inset: 10px;
+            border-radius: 50%;
+            background: rgba(5, 10, 22, 0.92);
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .circular-meter span {
+            position: relative;
+            z-index: 1;
+            font-size: 1.5rem;
+            font-weight: 900;
+            color: var(--text-0);
+        }
+
+        .confidence-copy p {
+            margin: 0;
+            color: var(--text-1);
+            line-height: 1.7;
+        }
+
+        .section-card {
+            padding: var(--space-5);
+            margin-bottom: var(--space-4);
+        }
+
+        .claim-list,
+        .evidence-grid,
+        .debate-list {
+            display: grid;
+            gap: var(--space-3);
+        }
+
+        .claim-item,
+        .evidence-card,
+        .debate-card,
+        .report-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: var(--radius-md);
+            padding: var(--space-4);
+        }
+
+        .claim-head,
+        .evidence-head,
+        .debate-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: var(--space-3);
+            margin-bottom: var(--space-3);
+        }
+
+        .claim-text,
+        .evidence-text,
+        .argument-text {
+            margin: 0;
+            color: var(--text-1);
+            line-height: 1.65;
+        }
+
+        .claim-meta {
+            display: grid;
+            gap: var(--space-2);
+            margin-top: var(--space-3);
+            color: var(--text-2);
+            font-size: 0.9rem;
+        }
+
+        .claim-result {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            flex-wrap: wrap;
+        }
+
+        .evidence-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .evidence-card {
+            border-left-width: 4px;
+        }
+
+        .evidence-card.supporting { border-left-color: var(--success); }
+        .evidence-card.refuting { border-left-color: var(--danger); }
+        .evidence-card.neutral { border-left-color: var(--neutral); }
+
+        .evidence-source {
+            display: flex;
+            gap: var(--space-2);
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: var(--space-3);
+        }
+
+        .credibility-meter {
+            display: grid;
+            gap: var(--space-2);
+            margin-top: var(--space-3);
+        }
+
+        .credibility-bar {
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.08);
+            overflow: hidden;
+        }
+
+        .credibility-bar span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--accent), var(--success));
+        }
+
+        details.debate-card summary {
+            list-style: none;
+            cursor: pointer;
+        }
+
+        details.debate-card summary::-webkit-details-marker { display: none; }
+
+        .debate-role-list {
+            display: grid;
+            gap: var(--space-3);
+            margin-top: var(--space-3);
+        }
+
+        .role-block {
+            padding: var(--space-3);
+            border-radius: 14px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.07);
+        }
+
+        .role-name {
+            display: inline-flex;
+            align-items: center;
+            margin-bottom: var(--space-2);
+            color: #e2e8f0;
+            font-weight: 800;
+            text-transform: capitalize;
+            letter-spacing: 0.05em;
+        }
+
+        .report-card .markdown-body {
+            color: var(--text-0);
+            line-height: 1.75;
+        }
+
+        .report-card .markdown-body h1,
+        .report-card .markdown-body h2,
+        .report-card .markdown-body h3,
+        .report-card .markdown-body h4 {
+            color: var(--text-0);
+            margin-top: 1.25em;
+            margin-bottom: 0.5em;
+        }
+
+        .report-card .markdown-body p,
+        .report-card .markdown-body li { color: var(--text-1); }
+
+        .empty-state {
+            padding: var(--space-8);
+            text-align: center;
+            color: var(--text-2);
+            border: 1px dashed rgba(255,255,255,0.12);
+            border-radius: var(--radius-lg);
+            background: rgba(255,255,255,0.03);
+        }
+
+        .loader-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            margin-left: 2px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: pulse 1s infinite ease-in-out;
+        }
+
+        .loader-dot:nth-child(2) { animation-delay: 0.15s; }
+        .loader-dot:nth-child(3) { animation-delay: 0.3s; }
+
+        @keyframes pulse {
+            0%, 80%, 100% { transform: translateY(0); opacity: 0.5; }
+            40% { transform: translateY(-3px); opacity: 1; }
+        }
+
+        @media (max-width: 1180px) {
+            .layout { grid-template-columns: 1fr; }
+            .sidebar,
+            .model-sidebar { border: 0; border-top: 1px solid var(--line); }
+            .hero-grid,
+            .results-top,
+            .confidence-wrap { grid-template-columns: 1fr; }
+            .evidence-grid { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 720px) {
+            .verify-shell { width: min(100vw, 100%); padding: 0; }
+            .verify-surface { border-radius: 0; min-height: 100vh; }
+            .verify-header,
+            .sidebar,
+            .main-panel,
+            .model-sidebar { padding: var(--space-4); }
+            .input-controls { grid-template-columns: 1fr; }
+            .stage-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+    </style>
+</head>
+<body>
+    <div class="stars-container" id="stars-container"></div>
+    <div class="cursor-particles" id="cursor-particles"></div>
+
+    <div class="verify-shell">
+        <div class="verify-surface">
+            <div class="verify-header">
+                <div class="brand">
+                    <h1 id="page-title">事实核查引擎</h1>
+                    <p id="page-subtitle">提交新闻链接、段落或声明，系统将自动抽取主张、检索证据、展开辩论并生成最终判定。</p>
+                </div>
+                <button id="lang-toggle" class="lang-toggle-btn" type="button">English</button>
+            </div>
+
+            <div class="layout">
+                <aside class="sidebar" id="history-sidebar">
+                    <div class="section-title" id="history-title">核查历史</div>
+                    <ul class="sidebar-list" id="history-list">
+                        <li class="history-item"><div class="history-meta">加载中...</div></li>
+                    </ul>
+                </aside>
+
+                <main class="main-panel">
+                    <section class="panel input-panel">
+                        <form id="verify-form" class="input-form">
+                            <div>
+                                <label class="input-label" for="verify-input">
+                                    <span id="input-label">待核查内容</span>
+                                    <span class="hint" id="input-hint">URL / Text / Claim</span>
+                                </label>
+                                <textarea id="verify-input" name="topic" placeholder="Enter a news article URL, text, or claim to verify..." required></textarea>
+                            </div>
+
+                            <div class="input-controls">
+                                <div>
+                                    <label class="input-label" for="model-provider"><span id="provider-label">模型提供商</span></label>
+                                    <select name="model_provider" id="model-provider">
+                                        <option value="deepseek" {% if session.get('model_provider') == 'deepseek' %}selected{% endif %}>DeepSeek</option>
+                                        <option value="openai" {% if session.get('model_provider') == 'openai' %}selected{% endif %}>OpenAI</option>
+                                        <option value="zhipu" {% if session.get('model_provider') == 'zhipu' %}selected{% endif %}>Zhipu AI</option>
+                                        <option value="ali" {% if session.get('model_provider') == 'ali' %}selected{% endif %}>Alibaba Cloud</option>
+                                        <option value="moonshot" {% if session.get('model_provider') == 'moonshot' %}selected{% endif %}>Moonshot AI</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="input-label" for="model-name"><span id="model-label">模型名称</span></label>
+                                    <select name="model_name" id="model-name"></select>
+                                </div>
+                            </div>
+
+                            <div class="submit-row">
+                                <div class="language-toggle" aria-label="Language toggle">
+                                    <span id="lang-zh" class="active">中文</span>
+                                    <span id="lang-en">English</span>
+                                </div>
+                                <button type="submit" id="verify-submit-btn" class="primary-btn">发送验证</button>
+                            </div>
+                        </form>
+                    </section>
+
+                    <section class="panel progress-panel" id="progress-panel">
+                        <div class="progress-head">
+                            <div>
+                                <p class="progress-title" id="progress-title">验证进度</p>
+                                <div class="stage-status" id="stage-status">等待输入...</div>
+                            </div>
+                            <div class="hint" id="progress-count">0 / 7 stages</div>
+                        </div>
+                        <div class="progress-bar" aria-hidden="true"><div id="progress-bar-fill" class="progress-bar-fill"></div></div>
+                        <div class="stage-grid" id="stage-grid"></div>
+                        <div class="stream-log" id="stream-log"></div>
+                    </section>
+
+                    <section class="panel results-panel" id="results-panel" aria-live="polite">
+                        <div class="results-top">
+                            <div class="verdict-card">
+                                <h2 id="overall-verdict-title">总体判定</h2>
+                                <div id="overall-verdict-badge" class="verdict-badge-large unverified">UNVERIFIED</div>
+                                <p id="overall-verdict-summary" class="overall-summary">等待核查结果。</p>
+                            </div>
+                            <div class="confidence-card">
+                                <h3 id="confidence-title">置信度</h3>
+                                <div class="confidence-wrap">
+                                    <div class="circular-meter" id="confidence-meter"><span id="confidence-value">0%</span></div>
+                                    <div class="confidence-copy">
+                                        <p id="confidence-copy">置信度来自证据来源、反向论证与结论一致性。</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <section class="section-card panel" style="margin-bottom: var(--space-4);">
+                            <h3 id="claims-title">主张拆解</h3>
+                            <div class="claim-list" id="claims-list">
+                                <div class="empty-state" id="claims-empty">提交内容后将自动拆解为多个可核查主张。</div>
+                            </div>
+                        </section>
+
+                        <section class="section-card panel" style="margin-bottom: var(--space-4);">
+                            <h3 id="evidence-title">证据卡片</h3>
+                            <div class="evidence-grid" id="evidence-grid">
+                                <div class="empty-state" id="evidence-empty">证据检索完成后将在此显示支持、反对与中性材料。</div>
+                            </div>
+                        </section>
+
+                        <section class="section-card panel" style="margin-bottom: var(--space-4);">
+                            <h3 id="debate-title">辩论摘要</h3>
+                            <div class="debate-list" id="debate-list">
+                                <div class="empty-state" id="debate-empty">等待多智能体辩论输出。</div>
+                            </div>
+                        </section>
+
+                        <section class="section-card panel">
+                            <h3 id="report-title">完整报告</h3>
+                            <div class="report-card">
+                                <div id="report-content" class="markdown-body">
+                                    <div class="empty-state">报告生成后将以 Markdown 渲染显示。</div>
+                                </div>
+                            </div>
+                        </section>
+                    </section>
+                </main>
+
+                <aside class="model-sidebar" id="model-selection-sidebar">
+                    <div class="section-title" id="model-title">模型与设置</div>
+                    <form id="model-params-form">
+                        <div class="form-group" style="margin-bottom: var(--space-4);">
+                            <label class="input-label" for="model-provider"><span id="provider-label-2">模型提供商</span></label>
+                            <select name="model_provider" id="model-provider-sidebar">
+                                <option value="deepseek" {% if session.get('model_provider') == 'deepseek' %}selected{% endif %}>DeepSeek</option>
+                                <option value="openai" {% if session.get('model_provider') == 'openai' %}selected{% endif %}>OpenAI</option>
+                                <option value="zhipu" {% if session.get('model_provider') == 'zhipu' %}selected{% endif %}>Zhipu AI</option>
+                                <option value="ali" {% if session.get('model_provider') == 'ali' %}selected{% endif %}>Alibaba Cloud</option>
+                                <option value="moonshot" {% if session.get('model_provider') == 'moonshot' %}selected{% endif %}>Moonshot AI</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: var(--space-4);">
+                            <label class="input-label" for="model-name-sidebar"><span id="model-name-label-2">模型名称</span></label>
+                            <select name="model_name" id="model-name-sidebar"></select>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: var(--space-4);">
+                            <label class="input-label" for="language-input"><span id="language-label">语言</span></label>
+                            <input type="hidden" id="language-input" name="language" value="{{ session.get('language', 'zh') }}">
+                            <div class="hint" id="language-hint">使用顶部切换按钮在中文 / English 之间切换。</div>
+                        </div>
+                    </form>
+
+                    <a href="{{ url_for('new_verification') }}" class="history-item" style="margin-top: var(--space-4); text-decoration: none;">
+                        <div class="history-row">
+                            <p class="history-title" id="new-session-link">开始新会话</p>
+                            <span class="badge provider">NEW</span>
+                        </div>
+                        <div class="history-meta" id="new-session-copy">Return to a clean slate and start another verification.</div>
+                    </a>
+                </aside>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const stageOrder = [
+                'claim_extraction',
+                'claim_decomposition',
+                'evidence_retrieval',
+                'source_credibility',
+                'evidence_aggregation',
+                'multi_agent_debate',
+                'verdict_synthesis'
+            ];
+
+            const stageLabels = {
+                claim_extraction: { zh: '主张提取', en: 'Claim Extraction' },
+                claim_decomposition: { zh: '主张拆解', en: 'Claim Decomposition' },
+                evidence_retrieval: { zh: '证据检索', en: 'Evidence Retrieval' },
+                source_credibility: { zh: '来源可信度', en: 'Source Credibility' },
+                evidence_aggregation: { zh: '证据聚合', en: 'Evidence Aggregation' },
+                multi_agent_debate: { zh: '多智能体辩论', en: 'Multi-agent Debate' },
+                verdict_synthesis: { zh: '结论综合', en: 'Verdict Synthesis' }
+            };
+
+            const providerModelOptions = {
+                deepseek: [
+                    { value: 'deepseek-chat', text: 'deepseek-chat (V4 Flash)' },
+                    { value: 'deepseek-reasoner', text: 'deepseek-reasoner (V4 思考)' },
+                    { value: 'deepseek-v4-pro', text: 'deepseek-v4-pro' }
+                ],
+                openai: [
+                    { value: 'gpt-4o', text: 'gpt-4o (默认)' },
+                    { value: 'gpt-4o-mini', text: 'gpt-4o-mini' },
+                    { value: 'gpt-4-turbo', text: 'gpt-4-turbo' }
+                ],
+                zhipu: [
+                    { value: 'glm-4', text: 'glm-4 (默认)' },
+                    { value: 'glm-4-air', text: 'glm-4-air' },
+                    { value: 'glm-4-flash', text: 'glm-4-flash' }
+                ],
+                ali: [
+                    { value: 'qwen-max', text: 'qwen-max (默认)' },
+                    { value: 'qwen-plus', text: 'qwen-plus' },
+                    { value: 'qwen-turbo', text: 'qwen-turbo' }
+                ],
+                moonshot: [
+                    { value: 'moonshot-v1-8k', text: 'moonshot-v1-8k (默认)' },
+                    { value: 'moonshot-v1-32k', text: 'moonshot-v1-32k' },
+                    { value: 'moonshot-v1-128k', text: 'moonshot-v1-128k' }
+                ]
+            };
+
+            const state = {
+                language: '{{ session.get("language", "zh") }}' || 'zh',
+                stagesCompleted: new Set(),
+                activeStage: null,
+                stageMessage: '等待输入...',
+                claims: [],
+                evidence: [],
+                debate: [],
+                verdicts: [],
+                overallVerdict: null,
+                overallConfidence: 0,
+                reportMarkdown: '',
+                history: []
+            };
+
+            const refs = {
+                form: document.getElementById('verify-form'),
+                input: document.getElementById('verify-input'),
+                provider: document.getElementById('model-provider'),
+                providerSidebar: document.getElementById('model-provider-sidebar'),
+                model: document.getElementById('model-name'),
+                modelSidebar: document.getElementById('model-name-sidebar'),
+                submit: document.getElementById('verify-submit-btn'),
+                langToggle: document.getElementById('lang-toggle'),
+                langZh: document.getElementById('lang-zh'),
+                langEn: document.getElementById('lang-en'),
+                languageInput: document.getElementById('language-input'),
+                pageTitle: document.getElementById('page-title'),
+                pageSubtitle: document.getElementById('page-subtitle'),
+                historyTitle: document.getElementById('history-title'),
+                modelTitle: document.getElementById('model-title'),
+                inputLabel: document.getElementById('input-label'),
+                inputHint: document.getElementById('input-hint'),
+                providerLabel: document.getElementById('provider-label'),
+                providerLabel2: document.getElementById('provider-label-2'),
+                modelLabel: document.getElementById('model-label'),
+                modelNameLabel2: document.getElementById('model-name-label-2'),
+                languageLabel: document.getElementById('language-label'),
+                languageHint: document.getElementById('language-hint'),
+                newSessionLink: document.getElementById('new-session-link'),
+                newSessionCopy: document.getElementById('new-session-copy'),
+                progressTitle: document.getElementById('progress-title'),
+                stageStatus: document.getElementById('stage-status'),
+                progressCount: document.getElementById('progress-count'),
+                progressFill: document.getElementById('progress-bar-fill'),
+                stageGrid: document.getElementById('stage-grid'),
+                streamLog: document.getElementById('stream-log'),
+                resultsPanel: document.getElementById('results-panel'),
+                overallVerdictBadge: document.getElementById('overall-verdict-badge'),
+                overallVerdictSummary: document.getElementById('overall-verdict-summary'),
+                confidenceMeter: document.getElementById('confidence-meter'),
+                confidenceValue: document.getElementById('confidence-value'),
+                confidenceCopy: document.getElementById('confidence-copy'),
+                claimsList: document.getElementById('claims-list'),
+                evidenceGrid: document.getElementById('evidence-grid'),
+                debateList: document.getElementById('debate-list'),
+                reportContent: document.getElementById('report-content'),
+                historyList: document.getElementById('history-list')
+            };
+
+            function normalizeClaimKey(value) {
+                if (value === null || value === undefined) return '';
+                const raw = String(value).toLowerCase().trim();
+                const digits = raw.match(/(\d+)/);
+                if (digits) return digits[1];
+                return raw.replace(/^claim[_-]?/, '').replace(/^c/, '');
+            }
+
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text ?? '';
+                return div.innerHTML;
+            }
+
+            function verdictClass(verdict) {
+                const normalized = String(verdict || '').toUpperCase();
+                if (normalized === 'TRUE') return 'true';
+                if (normalized === 'FALSE') return 'false';
+                if (normalized === 'MIXED') return 'mixed';
+                return 'unverified';
+            }
+
+            function evidenceClass(stance) {
+                const normalized = String(stance || '').toLowerCase();
+                if (normalized.includes('support')) return 'supporting';
+                if (normalized.includes('refut')) return 'refuting';
+                return 'neutral';
+            }
+
+            function stageIndex(stage) {
+                return Math.max(0, stageOrder.indexOf(stage));
+            }
+
+            function stageText(stage) {
+                const lang = state.language;
+                if (!stageLabels[stage]) return stage;
+                return stageLabels[stage][lang] || stageLabels[stage].en;
+            }
+
+            function updateStageGrid() {
+                refs.stageGrid.innerHTML = '';
+                stageOrder.forEach((stage) => {
+                    const pill = document.createElement('div');
+                    pill.className = 'stage-pill';
+                    pill.textContent = stageText(stage);
+                    if (state.stagesCompleted.has(stage)) pill.classList.add('completed');
+                    if (state.activeStage === stage) pill.classList.add('active');
+                    refs.stageGrid.appendChild(pill);
+                });
+
+                const completedCount = state.stagesCompleted.size;
+                refs.progressFill.style.width = `${Math.min(100, (completedCount / stageOrder.length) * 100)}%`;
+                refs.progressCount.textContent = `${completedCount} / ${stageOrder.length} stages`;
+            }
+
+            function addStreamLog(message, tone = 'neutral') {
+                const item = document.createElement('div');
+                item.className = 'stream-event';
+                if (tone === 'error') item.style.borderColor = 'rgba(239,68,68,0.3)';
+                if (tone === 'success') item.style.borderColor = 'rgba(34,197,94,0.3)';
+                item.textContent = message;
+                refs.streamLog.appendChild(item);
+                refs.streamLog.scrollTop = refs.streamLog.scrollHeight;
+            }
+
+            function claimMap() {
+                const map = new Map();
+                state.claims.forEach((claim) => map.set(normalizeClaimKey(claim.id), claim));
+                return map;
+            }
+
+            function verdictMap() {
+                const map = new Map();
+                state.verdicts.forEach((item) => map.set(normalizeClaimKey(item.claim_id), item));
+                return map;
+            }
+
+            function renderClaims() {
+                refs.claimsList.innerHTML = '';
+                if (!state.claims.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'empty-state';
+                    empty.textContent = state.language === 'zh' ? '提交内容后将自动拆解为多个可核查主张。' : 'Claims will appear here after decomposition.';
+                    refs.claimsList.appendChild(empty);
+                    return;
+                }
+
+                const verdicts = verdictMap();
+                state.claims.forEach((claim, index) => {
+                    const verdict = verdicts.get(normalizeClaimKey(claim.id));
+                    const item = document.createElement('article');
+                    item.className = 'claim-item';
+
+                    const head = document.createElement('div');
+                    head.className = 'claim-head';
+                    const left = document.createElement('div');
+                    left.innerHTML = `<div class="history-meta">${escapeHtml(claim.id || `claim_${index}`)}</div><p class="claim-text">${escapeHtml(claim.text || '')}</p>`;
+
+                    const right = document.createElement('div');
+                    right.className = 'claim-result';
+                    if (verdict) {
+                        right.innerHTML = `
+                            <span class="badge ${verdictClass(verdict.verdict)}">${escapeHtml(verdict.verdict || 'UNVERIFIED')}</span>
+                            <span class="history-meta">${Math.round((verdict.confidence || 0) * 100)}%</span>
+                        `;
+                    } else {
+                        right.innerHTML = '<span class="badge unverified">UNVERIFIED</span>';
+                    }
+
+                    head.appendChild(left);
+                    head.appendChild(right);
+                    item.appendChild(head);
+
+                    if (verdict?.reasoning) {
+                        const reasoning = document.createElement('div');
+                        reasoning.className = 'claim-meta';
+                        reasoning.innerHTML = `<div>${escapeHtml(reasoningPrefix())}</div><div>${escapeHtml(verdict.reasoning)}</div>`;
+                        item.appendChild(reasoning);
+                    }
+
+                    refs.claimsList.appendChild(item);
+                });
+            }
+
+            function reasoningPrefix() {
+                return state.language === 'zh' ? '理由' : 'Reasoning';
+            }
+
+            function renderEvidence() {
+                refs.evidenceGrid.innerHTML = '';
+                if (!state.evidence.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'empty-state';
+                    empty.textContent = state.language === 'zh'
+                        ? '证据检索完成后将在此显示支持、反对与中性材料。'
+                        : 'Evidence cards will appear here once retrieval completes.';
+                    refs.evidenceGrid.appendChild(empty);
+                    return;
+                }
+
+                state.evidence.forEach((item) => {
+                    const card = document.createElement('article');
+                    const stanceClass = evidenceClass(item.stance);
+                    card.className = `evidence-card ${stanceClass}`;
+
+                    const sourceName = item.source_name || (state.language === 'zh' ? '未知来源' : 'Unknown source');
+                    const credibility = Number(item.credibility_score ?? 0);
+                    const credibilityPct = Math.max(0, Math.min(100, Math.round(credibility * 100)));
+
+                    card.innerHTML = `
+                        <div class="evidence-head">
+                            <div>
+                                <div class="evidence-source">
+                                    <span class="badge ${stanceClass}">${escapeHtml(item.stance || 'neutral')}</span>
+                                    <span class="badge provider">${escapeHtml(sourceName)}</span>
+                                </div>
+                                <p class="evidence-text">${escapeHtml(item.content || '')}</p>
+                            </div>
+                        </div>
+                        <div class="credibility-meter">
+                            <div class="history-meta">Credibility ${credibilityPct}%</div>
+                            <div class="credibility-bar"><span style="width:${credibilityPct}%;"></span></div>
+                        </div>
+                    `;
+
+                    refs.evidenceGrid.appendChild(card);
+                });
+            }
+
+            function renderDebate() {
+                refs.debateList.innerHTML = '';
+                if (!state.debate.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'empty-state';
+                    empty.textContent = state.language === 'zh' ? '等待多智能体辩论输出。' : 'Debate summaries will appear here.';
+                    refs.debateList.appendChild(empty);
+                    return;
+                }
+
+                const groups = new Map();
+                state.debate.forEach((entry) => {
+                    const key = normalizeClaimKey(entry.claim_id || 'general');
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key).push(entry);
+                });
+
+                const claimLookup = claimMap();
+                [...groups.entries()].forEach(([claimKey, entries]) => {
+                    const details = document.createElement('details');
+                    details.className = 'debate-card';
+                    const claimText = claimLookup.get(claimKey)?.text || claimKey;
+                    details.open = entries.length === 1;
+
+                    const summary = document.createElement('summary');
+                    summary.innerHTML = `
+                        <div class="debate-head">
+                            <div>
+                                <div class="history-meta">${escapeHtml(claimKey)}</div>
+                                <div class="claim-text">${escapeHtml(claimText)}</div>
+                            </div>
+                            <span class="badge provider">${entries.length}</span>
+                        </div>
+                    `;
+                    details.appendChild(summary);
+
+                    const body = document.createElement('div');
+                    body.className = 'debate-role-list';
+                    const roleOrder = ['advocate', 'skeptic', 'neutral', 'judge'];
+                    roleOrder.forEach((role) => {
+                        entries.filter((entry) => String(entry.role || '').toLowerCase() === role).forEach((entry) => {
+                            const block = document.createElement('div');
+                            block.className = 'role-block';
+                            block.innerHTML = `
+                                <div class="role-name">${escapeHtml(role)}</div>
+                                <p class="argument-text">${escapeHtml(entry.argument || '')}</p>
+                            `;
+                            body.appendChild(block);
+                        });
+                    });
+
+                    const uncategorized = entries.filter((entry) => !['advocate', 'skeptic', 'neutral', 'judge'].includes(String(entry.role || '').toLowerCase()));
+                    uncategorized.forEach((entry) => {
+                        const block = document.createElement('div');
+                        block.className = 'role-block';
+                        block.innerHTML = `
+                            <div class="role-name">${escapeHtml(entry.role || 'role')}</div>
+                            <p class="argument-text">${escapeHtml(entry.argument || '')}</p>
+                        `;
+                        body.appendChild(block);
+                    });
+
+                    details.appendChild(body);
+                    refs.debateList.appendChild(details);
+                });
+            }
+
+            function renderReport() {
+                if (!state.reportMarkdown) {
+                    refs.reportContent.innerHTML = '<div class="empty-state">报告生成后将以 Markdown 渲染显示。</div>';
+                    return;
+                }
+                refs.reportContent.innerHTML = marked.parse(state.reportMarkdown);
+            }
+
+            function updateOverallVerdict(verdict, confidence) {
+                if (!verdict) return;
+                state.overallVerdict = verdict;
+                state.overallConfidence = Number(confidence || 0);
+                const cls = verdictClass(verdict);
+                refs.overallVerdictBadge.className = `verdict-badge-large ${cls}`;
+                refs.overallVerdictBadge.textContent = String(verdict).toUpperCase();
+                refs.confidenceValue.textContent = `${Math.round(state.overallConfidence * 100)}%`;
+                refs.confidenceMeter.style.background = `conic-gradient(var(--accent) ${Math.round(state.overallConfidence * 360)}deg, rgba(255,255,255,0.08) 0deg)`;
+                refs.overallVerdictSummary.textContent = verdictSummaryText(verdict);
+            }
+
+            function verdictSummaryText(verdict) {
+                const lang = state.language;
+                const summaries = {
+                    TRUE: {
+                        zh: '综合证据更支持该陈述为真实。',
+                        en: 'The evidence set supports this claim as true.'
+                    },
+                    FALSE: {
+                        zh: '证据显示该陈述存在明显错误或误导。',
+                        en: 'The evidence suggests this claim is false or misleading.'
+                    },
+                    MIXED: {
+                        zh: '证据相互交织，结论只能给出部分支持或保留。',
+                        en: 'The evidence is mixed, so the conclusion remains partial or qualified.'
+                    },
+                    UNVERIFIED: {
+                        zh: '目前没有足够证据做出最终判断。',
+                        en: 'There is not enough evidence to make a final judgment yet.'
+                    }
+                };
+                return (summaries[String(verdict || 'UNVERIFIED').toUpperCase()] || summaries.UNVERIFIED)[lang];
+            }
+
+            function updateLanguageTexts() {
+                const isZh = state.language === 'zh';
+                document.documentElement.lang = isZh ? 'zh-CN' : 'en';
+                refs.langZh.classList.toggle('active', isZh);
+                refs.langEn.classList.toggle('active', !isZh);
+                refs.langToggle.textContent = isZh ? 'English' : '中文';
+                refs.pageTitle.textContent = isZh ? '事实核查引擎' : 'Fact-Check Engine';
+                refs.pageSubtitle.textContent = isZh
+                    ? '提交新闻链接、段落或声明，系统将自动抽取主张、检索证据、展开辩论并生成最终判定。'
+                    : 'Submit a URL, excerpt, or claim. The system extracts claims, retrieves evidence, debates the issue, and produces a verdict.';
+                refs.historyTitle.textContent = isZh ? '核查历史' : 'Verification History';
+                refs.modelTitle.textContent = isZh ? '模型与设置' : 'Model & Settings';
+                refs.inputLabel.textContent = isZh ? '待核查内容' : 'Input to Verify';
+                refs.inputHint.textContent = isZh ? 'URL / 文本 / 主张' : 'URL / Text / Claim';
+                refs.providerLabel.textContent = isZh ? '模型提供商' : 'Model Provider';
+                refs.providerLabel2.textContent = isZh ? '模型提供商' : 'Model Provider';
+                refs.modelLabel.textContent = isZh ? '模型名称' : 'Model Name';
+                refs.modelNameLabel2.textContent = isZh ? '模型名称' : 'Model Name';
+                refs.languageLabel.textContent = isZh ? '语言' : 'Language';
+                refs.languageHint.textContent = isZh
+                    ? '使用顶部切换按钮在中文 / English 之间切换。'
+                    : 'Use the top toggle to switch between 中文 / English.';
+                refs.newSessionLink.textContent = isZh ? '开始新会话' : 'Start New Session';
+                refs.newSessionCopy.textContent = isZh
+                    ? '返回一个干净的状态并开始新的核查。'
+                    : 'Return to a clean slate and start another verification.';
+                refs.progressTitle.textContent = isZh ? '验证进度' : 'Verification Progress';
+                refs.stageStatus.textContent = isZh ? state.stageMessage : translateStageMessage(state.stageMessage);
+                refs.overallVerdictSummary.textContent = verdictSummaryText(state.overallVerdict || 'UNVERIFIED');
+                refs.claimsList.querySelector('.empty-state') && renderClaims();
+                refs.evidenceGrid.querySelector('.empty-state') && renderEvidence();
+                refs.debateList.querySelector('.empty-state') && renderDebate();
+                refs.confidenceCopy.textContent = isZh
+                    ? '置信度来自证据来源、反向论证与结论一致性。'
+                    : 'Confidence reflects source quality, counter-arguments, and conclusion consistency.';
+                updateStageGrid();
+            }
+
+            function translateStageMessage(message) {
+                const pairs = [
+                    ['等待输入...', 'Waiting for input...'],
+                    ['验证开始...', 'Verification started...'],
+                    ['处理完成', 'Processing complete']
+                ];
+                let translated = message;
+                pairs.forEach(([zh, en]) => {
+                    if (message === zh) translated = en;
+                    if (message === en) translated = zh;
+                });
+                return translated;
+            }
+
+            function resetState() {
+                state.stagesCompleted = new Set();
+                state.activeStage = null;
+                state.stageMessage = state.language === 'zh' ? '验证开始...' : 'Verification started...';
+                state.claims = [];
+                state.evidence = [];
+                state.debate = [];
+                state.verdicts = [];
+                state.overallVerdict = null;
+                state.overallConfidence = 0;
+                state.reportMarkdown = '';
+                refs.resultsPanel.classList.remove('visible');
+                refs.claimsList.innerHTML = '';
+                refs.evidenceGrid.innerHTML = '';
+                refs.debateList.innerHTML = '';
+                refs.reportContent.innerHTML = '<div class="empty-state">报告生成后将以 Markdown 渲染显示。</div>';
+                refs.overallVerdictBadge.className = 'verdict-badge-large unverified';
+                refs.overallVerdictBadge.textContent = 'UNVERIFIED';
+                refs.overallVerdictSummary.textContent = state.language === 'zh' ? '等待核查结果。' : 'Waiting for verification results.';
+                refs.confidenceValue.textContent = '0%';
+                refs.confidenceMeter.style.background = 'conic-gradient(var(--accent) 0deg, rgba(255,255,255,0.08) 0deg)';
+                refs.streamLog.innerHTML = '';
+                updateStageGrid();
+                addStreamLog(state.stageMessage);
+            }
+
+            function finalizeResults() {
+                renderClaims();
+                renderEvidence();
+                renderDebate();
+                renderReport();
+                refs.resultsPanel.classList.add('visible');
+                if (state.overallVerdict) {
+                    updateOverallVerdict(state.overallVerdict, state.overallConfidence);
+                }
+                updateStageGrid();
+                addStreamLog(state.language === 'zh' ? '验证完成。' : 'Verification complete.', 'success');
+                refs.resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+
+            function updateModelOptions() {
+                const provider = refs.provider.value || refs.providerSidebar.value || 'deepseek';
+                const models = providerModelOptions[provider] || [];
+                const selectedModel = '{{ session.get("model_name", "") }}';
+                [refs.model, refs.modelSidebar].forEach((select) => {
+                    select.innerHTML = '';
+                    models.forEach((model) => {
+                        const option = document.createElement('option');
+                        option.value = model.value;
+                        option.textContent = model.text;
+                        if (model.value === selectedModel || (!selectedModel && model === models[0])) {
+                            option.selected = true;
+                        }
+                        select.appendChild(option);
+                    });
+                });
+            }
+
+            function syncProviderSelects(source) {
+                const target = source === refs.provider ? refs.providerSidebar : refs.provider;
+                target.value = source.value;
+                updateModelOptions();
+            }
+
+            function syncModelSelects(source) {
+                const target = source === refs.model ? refs.modelSidebar : refs.model;
+                target.value = source.value;
+            }
+
+            function normalizeHistoryVerdict(item) {
+                return (item.overall_verdict || item.verdict || item.result || 'UNVERIFIED').toUpperCase();
+            }
+
+            function renderHistory(items) {
+                refs.historyList.innerHTML = '';
+                if (!items || !items.length) {
+                    const li = document.createElement('li');
+                    li.className = 'history-item';
+                    li.innerHTML = `<div class="history-meta">${state.language === 'zh' ? '暂无历史记录' : 'No history yet'}</div>`;
+                    refs.historyList.appendChild(li);
+                    return;
+                }
+
+                items.slice(0, 12).forEach((item) => {
+                    const verdict = normalizeHistoryVerdict(item);
+                    const li = document.createElement('li');
+                    const title = item.title || item.user_input || item.topic || (state.language === 'zh' ? '未命名核查' : 'Untitled verification');
+                    const href = item.id ? `/history/${item.id}` : '#';
+                    li.innerHTML = `
+                        <a class="history-item" href="${href}">
+                            <div class="history-row">
+                                <p class="history-title">${escapeHtml(title)}</p>
+                                <span class="badge ${verdictClass(verdict)}">${escapeHtml(verdict)}</span>
+                            </div>
+                            <div class="history-meta">${escapeHtml(item.timestamp || item.created_at || '')}</div>
+                        </a>
+                    `;
+                    refs.historyList.appendChild(li);
+                });
+            }
+
+            async function loadHistory() {
+                try {
+                    const response = await fetch('/history');
+                    const data = await response.json();
+                    if (Array.isArray(data)) {
+                        state.history = data;
+                        renderHistory(data);
+                    } else {
+                        renderHistory([]);
+                    }
+                } catch (error) {
+                    refs.historyList.innerHTML = `<li class="history-item"><div class="history-meta">${escapeHtml(error.message)}</div></li>`;
+                }
+            }
+
+            function setStage(stage) {
+                if (!stageOrder.includes(stage)) return;
+                state.activeStage = stage;
+                stageOrder.forEach((item) => {
+                    if (stageOrder.indexOf(item) < stageOrder.indexOf(stage)) state.stagesCompleted.add(item);
+                });
+                state.stageMessage = stageText(stage);
+                refs.stageStatus.textContent = state.stageMessage;
+                updateStageGrid();
+            }
+
+            refs.langToggle.addEventListener('click', () => {
+                state.language = state.language === 'zh' ? 'en' : 'zh';
+                refs.languageInput.value = state.language;
+                updateLanguageTexts();
+                renderClaims();
+                renderEvidence();
+                renderDebate();
+                renderHistory(state.history);
+            });
+
+            refs.provider.addEventListener('change', () => syncProviderSelects(refs.provider));
+            refs.providerSidebar.addEventListener('change', () => syncProviderSelects(refs.providerSidebar));
+            refs.model.addEventListener('change', () => syncModelSelects(refs.model));
+            refs.modelSidebar.addEventListener('change', () => syncModelSelects(refs.modelSidebar));
+
+            refs.form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const topic = refs.input.value.trim();
+                if (!topic) return;
+
+                resetState();
+                refs.submit.disabled = true;
+                refs.submit.textContent = state.language === 'zh' ? '验证中...' : 'Verifying...';
+
+                const formData = new FormData();
+                formData.append('topic', topic);
+                formData.append('model_provider', refs.provider.value);
+                formData.append('model_name', refs.model.value);
+                formData.append('language', state.language);
+
+                try {
+                    const response = await fetch('/verify', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    if (!response.body) throw new Error('Streaming body unavailable');
+
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder('utf-8');
+                    let buffer = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split(/\r?\n/);
+                        buffer = lines.pop() || '';
+
+                        for (const rawLine of lines) {
+                            const line = rawLine.trim();
+                            if (!line) continue;
+                            const payload = line.startsWith('data:') ? line.replace(/^data:\s?/, '') : line;
+                            try {
+                                const message = JSON.parse(payload);
+                                if (message.type === 'stage') {
+                                    setStage(message.stage);
+                                    state.stageMessage = message.message || stageText(message.stage);
+                                    refs.stageStatus.textContent = state.stageMessage;
+                                    addStreamLog(state.stageMessage);
+                                } else if (message.type === 'claims') {
+                                    state.claims = Array.isArray(message.data) ? message.data : [];
+                                    renderClaims();
+                                    addStreamLog(state.language === 'zh' ? `已提取 ${state.claims.length} 条主张。` : `Extracted ${state.claims.length} claims.`, 'success');
+                                } else if (message.type === 'evidence') {
+                                    state.evidence = Array.isArray(message.data) ? message.data : [];
+                                    renderEvidence();
+                                    addStreamLog(state.language === 'zh' ? `已收集 ${state.evidence.length} 条证据。` : `Collected ${state.evidence.length} evidence items.`, 'success');
+                                } else if (message.type === 'debate') {
+                                    state.debate = Array.isArray(message.data) ? message.data : [];
+                                    renderDebate();
+                                    addStreamLog(state.language === 'zh' ? `辩论条目 ${state.debate.length} 条。` : `Debate entries: ${state.debate.length}.`);
+                                } else if (message.type === 'verdict') {
+                                    state.verdicts = Array.isArray(message.data) ? message.data : [];
+                                    renderClaims();
+                                    addStreamLog(state.language === 'zh' ? '生成逐项判定。' : 'Claim-level verdicts generated.', 'success');
+                                } else if (message.type === 'overall_verdict') {
+                                    updateOverallVerdict(message.verdict, message.confidence);
+                                    addStreamLog(state.language === 'zh' ? `总体结论：${message.verdict}` : `Overall verdict: ${message.verdict}`, 'success');
+                                } else if (message.type === 'report') {
+                                    state.reportMarkdown = message.markdown || '';
+                                    renderReport();
+                                    addStreamLog(state.language === 'zh' ? '报告已生成。' : 'Report ready.', 'success');
+                                } else if (message.type === 'error') {
+                                    addStreamLog(message.message || 'Error', 'error');
+                                    refs.stageStatus.textContent = message.message || 'Error';
+                                } else if (message.type === 'done') {
+                                    finalizeResults();
+                                }
+                            } catch (error) {
+                                addStreamLog(line);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    addStreamLog(`${state.language === 'zh' ? '错误' : 'Error'}: ${error.message}`, 'error');
+                    refs.stageStatus.textContent = error.message;
+                } finally {
+                    refs.submit.disabled = false;
+                    refs.submit.textContent = state.language === 'zh' ? '发送验证' : 'Verify';
+                }
+            });
+
+            updateModelOptions();
+            updateStageGrid();
+            updateLanguageTexts();
+            loadHistory();
+        });
+    </script>
+</body>
+</html>
