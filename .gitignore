@@ -12,6 +12,10 @@ debug_*.py
 templates/debug_*.html
 tests/debug_*.py
 dist/
+
+# OpenCode agent files
+.omo/
+.opencode/
 # Database files
 *.db
 chat_history.db
