@@ -1,403 +1,333 @@
-from flask import Flask, render_template, request, session, redirect, url_for, Response, stream_with_context, jsonify
-from agent import NewsletterAgent
-from langchain_core.messages import AIMessage, HumanMessage
-import markdown
-import os
-import asyncio
-import json
-import sys
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    stream_with_context,
+    url_for,
+)
+from graph.agent import FactCheckAgent
 from sqlalchemy import create_engine, desc
 from sqlalchemy.orm import sessionmaker
-from models import Base, ChatSession, ChatMessage
+from models import Base, VerificationMessage, VerificationSession
+import json
+import os
+import sys
 import uuid
-from datetime import datetime
 
-# 1. 创建 Flask 应用实例
+
 app = Flask(__name__)
-# 设置一个密钥，以便使用 session
-# 在生产环境中，应使用更安全的方式管理密钥，例如环境变量
 app.secret_key = os.urandom(24)
 
-# 数据库设置
 DATABASE_URL = "sqlite:///chat_history.db"
 engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 Base.metadata.create_all(engine)
 SessionLocal = sessionmaker(bind=engine)
 
-# 处理打包后的资源路径
+
 def resource_path(relative_path):
-    """获取资源的绝对路径，用于PyInstaller打包后的资源访问"""
     try:
-        # PyInstaller创建临时文件夹并存储路径到 _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
-    
     return os.path.join(base_path, relative_path)
 
-# 配置模板和静态文件路径
-app.template_folder = resource_path('templates')
-app.static_folder = resource_path('static')
 
-# 2. 定义主页路由（重定向到流式端点）
-@app.route('/')
+def serialize_items(items):
+    return [item.model_dump() if hasattr(item, "model_dump") else item for item in items]
+
+
+app.template_folder = resource_path("templates")
+app.static_folder = resource_path("static")
+
+
+@app.route("/")
 def index():
-    """重定向到流式聊天端点"""
-    return redirect(url_for('chat_stream'))
+    return redirect(url_for("verify_page"))
 
-# 3. 定义开始新对话的路由
-@app.route('/new')
-def new_chat():
-    """清除 session 中的聊天记录，开始一个新对话"""
-    session.pop('chat_history', None)
-    session.pop('model_provider', None)
-    session.pop('model_name', None)
-    session.pop('maxiter', None)
-    return redirect(url_for('chat_stream'))
 
-# 3.5 定义调试聊天路由
-@app.route('/debug_chat')
-def debug_chat():
-    """调试聊天页面"""
-    # 从 session 中获取聊天历史记录
-    chat_history_raw = session.get('chat_history', [])
-    # 将原始字典列表转换为包含HTML的字典列表
-    chat_history_with_html = []
-    for msg in chat_history_raw:
-        # 创建消息副本并添加HTML版本的内容
-        msg_with_html = msg.copy()
-        if msg['type'] == 'ai':
-            # 将AI消息的Markdown内容转换为HTML
-            msg_with_html['content_html'] = markdown.markdown(msg['content'])
-        else:
-            # 对于用户消息，直接显示文本
-            msg_with_html['content_html'] = msg['content']
-        chat_history_with_html.append(msg_with_html)
-    
-    # 渲染带调试信息的聊天模板
-    return render_template('debug_chat.html', chat_history=chat_history_with_html)
+@app.route("/new")
+def new_verification():
+    session.pop("chat_history", None)
+    session.pop("model_provider", None)
+    session.pop("model_name", None)
+    session.pop("language", None)
+    session.pop("session_id", None)
+    return redirect(url_for("verify_page"))
 
-# 3.6 定义简化测试路由
-@app.route('/simple_test')
-def simple_test():
-    """简化测试页面"""
-    return render_template('simple_test.html')
 
-# 3.7 定义状态指示器调试路由
-@app.route('/debug_status')
-def debug_status():
-    """状态指示器调试页面"""
-    return render_template('debug_status.html')
+@app.route("/verify", methods=["GET", "POST"])
+def verify_page():
+    if request.method == "GET":
+        chat_history = session.get("chat_history", [])
+        for msg in chat_history:
+            if msg.get("type") == "ai":
+                msg["content_html"] = msg.get("content", "")
+        return render_template("verify.html", chat_history=chat_history)
 
-# 3.8 定义PDF下载路由
-@app.route('/download/<filename>')
-def download_pdf(filename):
-    """提供PDF文件下载"""
-    try:
-        # 确保文件名是安全的
-        from werkzeug.utils import secure_filename
-        filename = secure_filename(filename)
-        
-        # 构建文件路径
-        downloads_dir = os.path.join(app.static_folder, 'downloads')
-        file_path = os.path.join(downloads_dir, filename)
-        
-        # 检查文件是否存在
-        if not os.path.exists(file_path):
-            return "文件未找到", 404
-            
-        # 检查文件扩展名是否为PDF
-        if not filename.endswith('.pdf'):
-            return "只能下载PDF文件", 400
-            
-        # 使用Flask的send_from_directory提供文件下载
-        from flask import send_from_directory
-        return send_from_directory(
-            directory=downloads_dir,
-            path=filename,
-            as_attachment=True  # 强制下载而不是在浏览器中打开
-        )
-    except Exception as e:
-        return f"下载文件时出错: {str(e)}", 500
+    @stream_with_context
+    def generate():
+        db_session = SessionLocal()
+        try:
+            user_input = request.form.get("topic", "").strip()
+            if not user_input:
+                yield json.dumps(
+                    {
+                        "type": "error",
+                        "message": "Please enter a news article URL, text, or claim.",
+                    },
+                    ensure_ascii=False,
+                ) + "\n"
+                return
 
-# 4. 定义流式生成路由，处理所有对话
-@app.route('/chat_stream', methods=['GET', 'POST'])
-def chat_stream():
-    """处理用户的提问并以流式方式返回响应"""
-    # 获取数据库会话
-    from sqlalchemy.orm import sessionmaker
-    from models import ChatSession, ChatMessage
-    from sqlalchemy import create_engine
-    
-    # 数据库设置
-    DATABASE_URL = "sqlite:///chat_history.db"
-    engine = create_engine(DATABASE_URL, echo=False)
-    SessionLocal = sessionmaker(bind=engine)
-    db_session = SessionLocal()
-    
-    try:
-        # 如果是 GET 请求，渲染聊天界面
-        if request.method == 'GET':
-            # 准备用于渲染模板的数据
-            chat_history_to_render = session.get('chat_history', [])
-            # 将 Markdown 转换为 HTML
-            for message in chat_history_to_render:
-                if message['type'] == 'ai':
-                    message['content_html'] = markdown.markdown(message['content'])
-                    
-            return render_template('chat.html', chat_history=chat_history_to_render)
-
-        # 如果是 POST 请求，处理流式响应
-        def generate_with_session():
-            # 从表单获取用户输入
-            user_input = request.form.get('topic')
-            
-            # 打印调试信息
-            print(f"Received form data: {dict(request.form)}")
-            print(f"user_input: '{user_input}'")
-            
-            # 如果是新对话，获取模型选择、语言和 maxiter 参数并存入 session
-            # 对于已存在的对话，从 session 中获取模型选择和语言
-            if 'chat_history' not in session:
-                model_provider = request.form.get('model_provider', 'deepseek')
-                model_name = request.form.get('model_name', '').strip()
-                # 如果没有提供模型名称，则使用空字符串表示使用默认模型
-                model_name = model_name if model_name else None
-                # 获取 maxiter 参数，默认为 128
-                maxiter = int(request.form.get('maxiter', 128))
-                # 获取语言参数，默认为中文
-                language = request.form.get('language', 'zh')
-                
-                session['model_provider'] = model_provider
-                session['model_name'] = model_name
-                session['maxiter'] = maxiter
-                session['language'] = language
+            if "chat_history" not in session:
+                model_provider = request.form.get("model_provider", "deepseek")
+                model_name = request.form.get("model_name", "").strip() or None
+                language = request.form.get("language", "zh")
+                session["model_provider"] = model_provider
+                session["model_name"] = model_name
+                session["language"] = language
             else:
-                model_provider = session.get('model_provider', 'deepseek')
-                model_name = session.get('model_name', None)
-                maxiter = session.get('maxiter', 128)
-                language = session.get('language', 'zh')
+                model_provider = session.get("model_provider", "deepseek")
+                model_name = session.get("model_name", None)
+                language = session.get("language", "zh")
 
-            # 更宽松的输入验证 - 只有当输入为 None 时才报错
-            if user_input is None:
-                yield "{\"type\": \"output\", \"content\": \"错误: 请输入一个主题或问题.\"}\n"
-                return
-                
-            # 如果输入是空字符串，也认为是无效输入
-            if not user_input.strip():
-                yield "{\"type\": \"output\", \"content\": \"错误: 请输入一个主题或问题.\"}\n"
-                return
+            session_id = session.get("session_id")
+            verification_session = None
 
-            # 获取或创建会话ID和ChatSession对象
-            session_id = session.get('session_id')
-            if not session_id:
-                # 创建新的ChatSession
-                new_session = ChatSession(title=user_input[:100])  # 使用前100个字符作为标题
-                db_session.add(new_session)
+            if session_id:
+                verification_session = (
+                    db_session.query(VerificationSession).filter_by(id=session_id).first()
+                )
+
+            if verification_session is None:
+                verification_session = VerificationSession(
+                    id=session_id or str(uuid.uuid4()),
+                    title=user_input[:200],
+                )
+                db_session.add(verification_session)
                 db_session.commit()
-                session_id = new_session.id
-                session['session_id'] = session_id
 
-            # 保存用户消息
-            user_message = ChatMessage(session_id=session_id, message_type='human', content=user_input)
-            db_session.add(user_message)
+            session_id = verification_session.id
+            session["session_id"] = session_id
+
+            chat_history = session.get("chat_history", [])
+            chat_history.append({"type": "human", "content": user_input})
+            session["chat_history"] = chat_history
+
+            db_session.add(
+                VerificationMessage(
+                    session_id=session_id,
+                    message_type="human",
+                    content=user_input,
+                )
+            )
             db_session.commit()
 
-            # 从 session 中获取历史记录
-            chat_history_raw = session.get('chat_history', [])
-            chat_history_raw.append({'type': 'human', 'content': user_input})
-            session['chat_history'] = chat_history_raw
-
-            # 将原始字典列表转换为 LangChain 消息对象列表
-            chat_history_messages = [HumanMessage(**msg) if msg['type'] == 'human' else AIMessage(**msg) for msg in chat_history_raw]
-
             try:
-                model_provider = session.get('model_provider', 'deepseek')
-                model_name = session.get('model_name', None)
-                maxiter = session.get('maxiter', 128)
-                
-                # 创建代理实例，并传入历史记录、 maxiter 和 language 参数
-                agent = NewsletterAgent(
-                    model_provider=model_provider, 
-                    model_name=model_name, 
-                    chat_history=chat_history_messages,
-                    max_iterations=maxiter,
-                    language=language
+                agent = FactCheckAgent(
+                    model_provider=model_provider,
+                    model_name=model_name,
+                    language=language,
                 )
-                
-                # 使用流式方式调用代理生成内容
-                full_response = ""
-                
-                # 使用 asyncio.run 来处理异步代码（推荐方法）
-                import asyncio
-                import json
-                
-                # 定义一个异步生成器函数
-                async def async_generate():
-                    nonlocal full_response
-                    async for chunk in agent.generate_newsletter_stream(user_input):
-                        # 累积响应内容
-                        if chunk.get("type") == "output":
-                            full_response += chunk.get("content", "")
-                        # 立即发送每个块到客户端
-                        yield json.dumps(chunk, ensure_ascii=False) + "\n"
-                
-                # 在新事件循环中运行异步代码
-                async def run_async_code():
-                    async for item in async_generate():
-                        yield item
-                        
-                # 同步包装异步生成器
-                import threading
-                from queue import Queue, Empty
-                
-                # 创建队列用于传递数据
-                q = Queue()
-                
-                # 定义在后台线程中运行的函数
-                def run_async_generator():
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        async_gen = run_async_code()
-                        while True:
-                            try:
-                                item = loop.run_until_complete(async_gen.__anext__())
-                                q.put(item)
-                            except StopAsyncIteration:
-                                break
-                    except Exception as e:
-                        q.put(e)
-                    finally:
-                        q.put(None)  # 信号表示完成
-                        loop.close()
-                
-                # 启动后台线程
-                thread = threading.Thread(target=run_async_generator)
-                thread.start()
-                
-                # 从队列中获取数据并发送给客户端
-                while True:
-                    try:
-                        item = q.get(timeout=1)  # 1秒超时
-                        if item is None:  # 完成信号
-                            break
-                        if isinstance(item, Exception):
-                            raise item
-                        yield item
-                    except Empty:
-                        # 检查线程是否还活着
-                        if not thread.is_alive():
-                            break
-                        continue
-                
-                thread.join()
+                thread_id = session_id
+                full_report = ""
+                overall_verdict = None
+                overall_confidence = None
 
-                # 保存AI消息
-                ai_message = ChatMessage(session_id=session_id, message_type='ai', content=full_response)
-                db_session.add(ai_message)
+                for chunk in agent.verify_stream(user_input, thread_id=thread_id):
+                    for node_name, state_update in chunk.items():
+                        _ = node_name
+
+                        if "current_stage" in state_update:
+                            stage_name = state_update["current_stage"]
+                            stage_messages = {
+                                "claim_extraction": "Extracting claims from input...",
+                                "claim_decomposition": "Decomposing claims...",
+                                "evidence_retrieval": "Searching for evidence...",
+                                "source_credibility": "Evaluating source credibility...",
+                                "evidence_aggregation": "Aggregating evidence...",
+                                "multi_agent_debate": "Running multi-agent debate...",
+                                "verdict_synthesis": "Generating verdict...",
+                            }
+                            yield json.dumps(
+                                {
+                                    "type": "stage",
+                                    "stage": stage_name,
+                                    "message": stage_messages.get(stage_name, stage_name),
+                                },
+                                ensure_ascii=False,
+                            ) + "\n"
+
+                        if "claims" in state_update and isinstance(
+                            state_update["claims"], list
+                        ):
+                            yield json.dumps(
+                                {
+                                    "type": "claims",
+                                    "data": serialize_items(state_update["claims"]),
+                                },
+                                ensure_ascii=False,
+                            ) + "\n"
+
+                        if "evidence" in state_update and isinstance(
+                            state_update["evidence"], list
+                        ):
+                            yield json.dumps(
+                                {
+                                    "type": "evidence",
+                                    "data": serialize_items(state_update["evidence"]),
+                                },
+                                ensure_ascii=False,
+                            ) + "\n"
+
+                        if "debate_arguments" in state_update and isinstance(
+                            state_update["debate_arguments"], list
+                        ):
+                            yield json.dumps(
+                                {
+                                    "type": "debate",
+                                    "data": serialize_items(
+                                        state_update["debate_arguments"]
+                                    ),
+                                },
+                                ensure_ascii=False,
+                            ) + "\n"
+
+                        if "verdicts" in state_update and isinstance(
+                            state_update["verdicts"], list
+                        ):
+                            yield json.dumps(
+                                {
+                                    "type": "verdict",
+                                    "data": serialize_items(state_update["verdicts"]),
+                                },
+                                ensure_ascii=False,
+                            ) + "\n"
+
+                        if "overall_verdict" in state_update:
+                            overall_verdict = state_update["overall_verdict"]
+                            overall_confidence = state_update.get(
+                                "overall_confidence", overall_confidence or 0
+                            )
+                            yield json.dumps(
+                                {
+                                    "type": "overall_verdict",
+                                    "verdict": overall_verdict,
+                                    "confidence": overall_confidence,
+                                },
+                                ensure_ascii=False,
+                            ) + "\n"
+
+                        if "report_markdown" in state_update:
+                            full_report = state_update["report_markdown"]
+                            yield json.dumps(
+                                {"type": "report", "markdown": full_report},
+                                ensure_ascii=False,
+                            ) + "\n"
+
+                        if "errors" in state_update:
+                            for err in state_update["errors"]:
+                                yield json.dumps(
+                                    {"type": "error", "message": str(err)},
+                                    ensure_ascii=False,
+                                ) + "\n"
+
+                db_session.add(
+                    VerificationMessage(
+                        session_id=session_id,
+                        message_type="ai",
+                        content=full_report,
+                    )
+                )
+
+                verification_session.overall_verdict = overall_verdict
+                verification_session.overall_confidence = (
+                    str(overall_confidence)
+                    if overall_confidence is not None
+                    else verification_session.overall_confidence
+                )
                 db_session.commit()
 
-                chat_history_raw.append({'type': 'ai', 'content': full_response})
-                session['chat_history'] = chat_history_raw
+                chat_history.append({"type": "ai", "content": full_report})
+                session["chat_history"] = chat_history
+
+                yield json.dumps({"type": "done"}, ensure_ascii=False) + "\n"
 
             except Exception as e:
-                print(f"生成内容时出错: {e}")
-                yield json.dumps({"type": "output", "content": f"生成内容时发生错误: {e}"}, ensure_ascii=False) + "\n"
+                db_session.rollback()
+                yield json.dumps(
+                    {"type": "error", "message": f"Error: {str(e)}"},
+                    ensure_ascii=False,
+                ) + "\n"
+        finally:
+            db_session.close()
 
-        return Response(stream_with_context(generate_with_session()), content_type='text/plain; charset=utf-8')
-        
+    return Response(generate(), content_type="text/plain; charset=utf-8")
+
+
+@app.route("/history")
+def get_history():
+    db_session = SessionLocal()
+    try:
+        sessions = db_session.query(VerificationSession).order_by(
+            desc(VerificationSession.start_time)
+        ).all()
+        history_data = [
+            {
+                "id": item.id,
+                "title": item.title
+                or f"Verification at {item.start_time.strftime('%Y-%m-%d %H:%M')}",
+                "start_time": item.start_time.isoformat(),
+                "verdict": item.overall_verdict or "",
+            }
+            for item in sessions
+        ]
+        return jsonify(history_data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     finally:
-        # 确保关闭数据库会话
         db_session.close()
 
 
-# 3.9 定义获取历史记录的路由
-@app.route('/history')
-def get_history():
-    """获取聊天历史记录"""
-    try:
-        db_session = SessionLocal()
-        try:
-            # 获取所有会话，按开始时间倒序排列
-            sessions = db_session.query(ChatSession).order_by(desc(ChatSession.start_time)).all()
-            
-            # 转换为JSON格式
-            history_data = []
-            for session in sessions:
-                history_data.append({
-                    'id': session.id,
-                    'title': session.title or f"会话于 {session.start_time.strftime('%Y-%m-%d %H:%M')}",
-                    'start_time': session.start_time.isoformat()
-                })
-            
-            return jsonify(history_data)
-        finally:
-            db_session.close()
-            
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-        history_data = []
-        for session in sessions:
-            history_data.append({
-                'id': session.id,
-                'title': session.title or f"会话于 {session.start_time.strftime('%Y-%m-%d %H:%M')}",
-                'start_time': session.start_time.isoformat()
-            })
-        
-        return jsonify(history_data)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-# 3.10 定义加载特定历史记录的路由
-@app.route('/history/<session_id>')
+@app.route("/history/<session_id>")
 def load_history(session_id):
-    """加载指定的聊天历史记录并渲染聊天页面"""
+    db_session = SessionLocal()
     try:
-        db_session = SessionLocal()
-        try:
-            # 查询指定的会话及其所有消息
-            session_data = db_session.query(ChatSession).filter_by(id=session_id).first()
-            
-            if not session_data:
-                return "会话未找到", 404
-                
-            # 获取该会话的所有消息，按时间排序
-            messages = db_session.query(ChatMessage).filter_by(session_id=session_id).order_by(ChatMessage.timestamp).all()
-            
-            # 准备用于渲染模板的数据
-            chat_history_to_render = []
-            for message in messages:
-                chat_history_to_render.append({
-                    'type': message.message_type,
-                    'content': message.content
-                })
-            
-            # 将 Markdown 转换为 HTML
-            for message in chat_history_to_render:
-                if message['type'] == 'ai':
-                    message['content_html'] = markdown.markdown(message['content'])
-            
-            # 设置session变量
-            session['session_id'] = session_id
-            session['chat_history'] = chat_history_to_render
-            
-            return render_template('chat.html', chat_history=chat_history_to_render)
-        finally:
-            db_session.close()
-            
+        session_data = db_session.query(VerificationSession).filter_by(id=session_id).first()
+        if not session_data:
+            return "Session not found", 404
+
+        messages = (
+            db_session.query(VerificationMessage)
+            .filter_by(session_id=session_id)
+            .order_by(VerificationMessage.timestamp)
+            .all()
+        )
+        chat_history = [
+            {"type": message.message_type, "content": message.content}
+            for message in messages
+        ]
+        for msg in chat_history:
+            if msg.get("type") == "ai":
+                msg["content_html"] = msg.get("content", "")
+
+        session["session_id"] = session_id
+        session["chat_history"] = chat_history
+        return render_template("verify.html", chat_history=chat_history)
     except Exception as e:
-        return f"加载历史记录时出错: {str(e)}", 500
+        return f"Error: {str(e)}", 500
+    finally:
+        db_session.close()
 
 
-# 3.11 定义历史记录页面路由
-@app.route('/history_page')
+@app.route("/history_page")
 def history_page():
-    """显示聊天历史记录页面"""
-    from flask import render_template
-    return render_template('history.html')
+    return render_template("history.html")
 
 
-# 启动应用的入口
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True, port=5001)
