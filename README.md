@@ -1,252 +1,146 @@
-# Newsletter Generation Agent
+# News Fact-Check Agent | 新闻事实核查引擎
 
-![Example Screenshot](figure/example.png)
+基于 LangGraph 多智能体验证管道的假新闻识别系统。通过多源交叉比对、多角色辩论和证据聚合，自动判定用户提交的新闻主张真假。
 
-## Project Overview
+## 架构
 
-The Newsletter Generation Agent is an intelligent AI assistant that automatically gathers relevant information and generates concise, engaging, and informative newsletters based on user-specified topics. It integrates multiple information sources, including news websites, Reddit discussions, and RSS feeds, to provide a comprehensive content overview.
+```
+用户输入 → 主张提取 → 主张拆解 → [并行] 证据检索 → 来源可信度评估
+                                              ↓
+完整报告 ← 结论综合 ← 多智能体辩论 ← 证据聚合
+```
 
-## Quick Start
+7 个 LangGraph StateGraph 节点，Send fan-out 并行证据检索：
 
-### 1. Environment Setup
+| 节点 | 功能 |
+|------|------|
+| `claim_extractor` | 从 URL/文本/声明中提取可验证主张 |
+| `claim_decomposer` | 将复合主张拆解为原子主张 |
+| `evidence_retriever` | 多源检索（NewsAPI / Reddit / RSS / Web） |
+| `source_credibility` | 三层域名可信度评分 |
+| `evidence_aggregator` | 去重、立场分类（支持/反对/中性） |
+| `multi_agent_debate` | Advocate / Skeptic / Neutral 三方辩论 + Judge 裁决 |
+| `verdict_synthesizer` | 逐项裁决 + 总体判定 + Markdown 报告 |
+
+## 快速开始
+
+### 1. 安装依赖
 
 ```bash
-# Create and activate conda environment
-conda create -n news_agent python=3.11
-conda activate news_agent
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 2. Configure API Keys
+### 2. 配置 API Key
 
-Copy `.env.example` to `.env` and fill in the appropriate API keys:
-
-```env
-# API Keys for different model providers
-OPENAI_API_KEY=your_openai_api_key_here
-DEEPSEEK_API_KEY=your_deepseek_api_key_here
-ZHIPU_API_KEY=your_zhipu_api_key_here
-ALI_API_KEY=your_ali_api_key_here
-MOONSHOT_API_KEY=your_moonshot_api_key_here
-
-# News API
-NEWS_API_KEY=your_newsapi_key_here
-
-# Reddit API
-REDDIT_CLIENT_ID=your_reddit_client_id
-REDDIT_CLIENT_SECRET=your_reddit_client_secret
-
-# SendGrid for email delivery
-SENDGRID_API_KEY=your_sendgrid_api_key
-FROM_EMAIL=your_sender_email@example.com
+```bash
+cp .env.example .env
 ```
 
-### 3. Start the Application
+编辑 `.env`，至少配置一个 LLM Provider：
+
+```env
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+```
+
+### 3. 启动
 
 ```bash
 python app.py
 ```
 
-The application will be available at `http://localhost:5001`.
+访问 `http://localhost:5001`
 
-## Core Features
+## 使用方式
 
-1. **Multi-source Information Gathering**:
-   - Fetch latest news from NewsAPI
-   - Search related discussions on Reddit
-   - Get professional content from RSS feeds
+1. 在输入框粘贴新闻 URL、新闻段落或具体声明
+2. 选择模型 Provider 和模型名称
+3. 点击「发送验证」
+4. 实时查看 7 阶段验证进度
+5. 查看结果：总体判定（TRUE / FALSE / MIXED / UNVERIFIED）、置信度、证据卡片、辩论摘要、完整报告
 
-2. **Intelligent Content Generation**:
-   - Analyze and organize information using advanced AI models (supporting OpenAI, DeepSeek, etc.)
-   - Generate structured, readable newsletters
+## 支持的模型
 
-3. **Multi-turn Conversation Support**:
-   - Support continuous conversation for more details
-   - Maintain context memory for coherent interaction
+| Provider | 模型 | Base URL |
+|----------|------|----------|
+| DeepSeek | deepseek-chat, deepseek-reasoner, deepseek-v4-pro | api.deepseek.com |
+| OpenAI | gpt-4o, gpt-4o-mini | api.openai.com |
+| Zhipu AI | glm-4, glm-4-air | open.bigmodel.cn |
+| Alibaba Cloud | qwen-max, qwen-plus | dashscope.aliyuncs.com |
+| Moonshot AI | moonshot-v1-8k, moonshot-v1-32k | api.moonshot.cn |
 
-4. **Multiple Model Selection**:
-   - Support multiple AI model providers
-   - Choose specific models to meet different needs
+## 判定结果
 
-5. **Streaming Response**:
-   - Display AI-generated content in real-time for better user experience
+| 判定 | 含义 | 显示色 |
+|------|------|--------|
+| **TRUE** | 证据支持该主张为真 | 🟢 绿色 |
+| **FALSE** | 证据显示该主张为假或误导 | 🔴 红色 |
+| **MIXED** | 证据相互矛盾，结论部分支持 | 🟡 琥珀色 |
+| **UNVERIFIED** | 证据不足，无法做出判断 | ⚪ 灰色 |
 
-6. **Content Delivery**:
-   - Send generated content via email
-   - Export as PDF files
+## 前端特性
 
-7. **Bilingual Support**:
-   - Switch between Chinese and English interfaces
-   - Generate content in both languages with appropriate prompts
+- 深色玻璃拟态设计
+- 7 阶段实时进度条
+- 总体判定徽章 + 置信度圆环
+- 证据卡片（支持/反对/中性色标边框）
+- 多智能体辩论折叠面板
+- Markdown 报告渲染
+- 验证历史记录
+- 中英文界面切换
+- 响应式移动端适配
 
-## Tech Stack
+## 项目结构
 
-- **Language**: Python 3.11
-- **Web Framework**: Flask
-- **AI Framework**: LangChain
-- **Language Models**: 
-  - OpenAI API (gpt-4o)
-  - DeepSeek API (deepseek-chat)
-  - Zhipu AI (glm-4)
-  - Alibaba Cloud (qwen-max)
-  - Moonshot AI (moonshot-v1-8k)
-- **Data Extraction**:
-  - newsapi-python (NewsAPI integration)
-  - newspaper3k (web article scraping and parsing)
-  - praw (Reddit API integration)
-  - feedparser (RSS feed parsing)
-  - beautifulsoup4 (general web content extraction)
-  - requests (HTTP requests for web content)
-- **Content Delivery**:
-  - sendgrid (email sending)
-  - weasyprint (PDF export)
-- **Frontend**: HTML, CSS
-- **Markdown Parsing**: Markdown library
-
-## Usage Guide
-
-### Usage Flow
-
-1. **Access the Application**:
-   Visit `http://localhost:5001` in your browser.
-
-2. **Select Model**:
-   - Choose AI model provider (e.g., DeepSeek, OpenAI, etc.)
-   - Select specific model (e.g., gpt-4o, deepseek-chat, etc.)
-   - Set maximum iterations (default is 128)
-
-3. **Enter Topic**:
-   Enter your interested news topic in the input box, such as "latest developments in artificial intelligence".
-
-4. **View Results**:
-   AI will automatically gather relevant information and generate a newsletter, with content displayed in real-time via streaming.
-
-5. **Continue Conversation**:
-   You can continue asking questions for more details, and the agent will provide coherent answers based on previous conversation history.
-
-6. **Content Delivery**:
-   - Request email delivery: "Please send this newsletter to me via email"
-   - Request PDF export: "Please export this newsletter as PDF"
-
-## Application Interface
-
-### 1. Chat Interface
-The main interface is a chat window that displays the conversation history between the user and the AI assistant.
-
-### 2. Model Selection
-The model selection form is displayed on first access, where you can select:
-- Model provider (DeepSeek, OpenAI, etc.)
-- Specific model (default model and other options for each provider)
-- Maximum iterations (1-10)
-
-### 3. Input Box
-The input box at the bottom is used to enter questions or topics.
-
-### 4. Start New Conversation
-Click the "Start New Conversation" button to clear the history and start a new conversation.
-
-## Common Use Cases
-
-1. **Technology News**:
-   Enter "latest developments in artificial intelligence" to get updates in the AI field.
-
-2. **Financial News**:
-   Enter "recent stock market trend analysis" to get financial market information.
-
-3. **Academic Research**:
-   Enter "latest research results in quantum computing" to get cutting-edge scientific research content.
-
-4. **Entertainment News**:
-   Enter "recent popular movies and TV shows" to get entertainment industry updates.
-
-5. **Personalized Content**:
-   Use multi-turn conversations to dive deep into specific topics.
-
-## Development Guide
-
-### Testing
-
-Run tests using pytest:
-
-```bash
-# Run all tests
-python -m pytest tests/ -v
-
-# Run specific test file
-python -m pytest tests/test_tools.py -v
+```
+news_agent/
+├── app.py                      # Flask 应用（SSE 流式验证）
+├── models.py                   # SQLAlchemy 数据模型
+├── graph/
+│   ├── state.py                # FactCheckState / Claim / Evidence / Verdict
+│   ├── llm_config.py           # 多 Provider LLM 工厂
+│   ├── builder.py              # StateGraph 构建 + Send fan-out
+│   ├── agent.py                # FactCheckAgent 封装
+│   └── nodes/
+│       ├── utils.py            # emit_progress / invoke_structured
+│       ├── claim_extractor.py  # 主张提取
+│       ├── claim_decomposer.py # 主张拆解
+│       ├── evidence_retriever.py  # 多源证据检索（工具容错）
+│       ├── source_credibility.py  # 来源可信度评分
+│       ├── evidence_aggregator.py # 证据聚合 + 立场分类
+│       ├── multi_agent_debate.py  # 多智能体辩论
+│       └── verdict_synthesizer.py # 结论综合
+├── templates/
+│   └── verify.html             # 验证前端
+├── tools/                      # 数据源工具（NewsAPI / Reddit / RSS / Web）
+├── tests/                      # 111 个测试（110 passed）
+├── requirements.txt
+└── .env.example
 ```
 
-### Extensibility
+## 测试
 
-The project uses a modular design that's easy to extend:
+```bash
+# 运行全部测试
+python -m pytest tests/ -v
 
-1. Add new AI model providers: Add configuration in `MODEL_PROVIDERS` in `agent.py`
-2. Add new tools: Create new modules in `tools/` directory and register in `agent.py`
-3. Add new data sources: Implement corresponding tool functions and register with the agent
-4. Enhance UI features: Modify files in `templates/` and `static/` directories
+# 运行核心 Pipeline 测试
+python -m pytest tests/test_claim_extractor.py tests/test_evidence_retriever.py tests/test_multi_agent_debate.py tests/test_verdict_synthesizer.py -v
 
-## Future Development Plans
+# 运行边缘用例测试
+python -m pytest tests/test_claim_extractor_edge.py tests/test_claim_decomposer_edge.py tests/test_evidence_retriever_resilience.py -v
+```
 
-1. **More Data Sources**:
-   Integrate more types of information sources, such as Twitter and professional databases.
+## 技术栈
 
-2. **Personalized Recommendations**:
-   Provide personalized content recommendations based on user history preferences.
+- **Web**: Flask + SQLAlchemy + SSE
+- **AI Pipeline**: LangGraph StateGraph + LangChain
+- **LLM**: DeepSeek / OpenAI / Zhipu / Qwen / Moonshot（OpenAI 兼容接口）
+- **数据源**: NewsAPI / Reddit (PRAW) / RSS (feedparser) / Web (BeautifulSoup)
+- **前端**: Vanilla JS + Jinja2 + marked.js
 
-3. **Mobile Adaptation**:
-   Optimize user experience for mobile devices.
+## 注意事项
 
-4. **Scheduled Sending**:
-   Support scheduled automatic newsletter delivery.
-
-5. **Multilingual Support**:
-   Extend support for more languages in content generation.
-
-## Important Notes
-
-1. **API Keys**:
-   Ensure all required API keys are correctly configured, otherwise related functions will not work.
-
-2. **Network Connection**:
-   The application requires a stable network connection to access external APIs.
-
-3. **Model Limitations**:
-   Different AI models have different capabilities and limitations. Choosing the right model can yield better results.
-
-4. **Privacy Protection**:
-   The application does not store user conversation content. All information is only kept in memory during the session.
-
-5. **Content Accuracy**:
-   AI-generated content is based on gathered information and may be inaccurate or outdated. Please refer to official information.
-
-## Documentation
-
-Detailed technical documentation:
-- [Technical Documentation](TECHNICAL_DOCUMENTATION.md)
-- [Application Documentation](APPLICATION_DOCUMENTATION.md)
-- [Development Guide](DEVELOPER_STYLE_GUIDE.md)
-- [Project Plan](plan.md)
-
-## Troubleshooting
-
-1. **Unable to Start Application**:
-   - Check if all dependencies are installed
-   - Confirm environment variables are correctly configured
-
-2. **API Call Failures**:
-   - Check if API keys are correct
-   - Confirm network connection is normal
-
-3. **Model Selection Invalid**:
-   - Check if the selected model is supported
-   - Confirm API key matches the model provider
-
-4. **Streaming Response Interrupted**:
-   - Check network connection
-   - Reduce maximum iteration settings
-
-5. **Content Delivery Failed**:
-   - Check SendGrid API key and sender email configuration
-   - Confirm wkhtmltopdf is installed (required for PDF export)
+- 至少配置一个 LLM Provider 的 API Key
+- NewsAPI / Reddit API Key 为可选（缺失时优雅降级，不影响 LLM 辩论和判定）
+- `evidence_retriever` 在工具模块不可用时自动跳过，Pipeline 仍可完成
+- 默认端口 `5001`，可在 `app.py` 底部修改
